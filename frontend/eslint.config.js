@@ -18,5 +18,12 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // Compiler-powered advisory rules (react-hooks v6). The flagged patterns are
+      // the classic fetch-in-effect loading flags and a Date.now() freshness check;
+      // keep them visible as warnings without failing the build.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/purity': 'warn',
+    },
   },
 ])

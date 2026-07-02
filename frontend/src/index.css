@@ -3,40 +3,48 @@
 /* Class-based dark mode: <html class="dark"> flips the tokens below. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Light is the default. Palette: violet primary + teal secondary - deliberately
-   nothing like cLend's gold/cyan-on-navy. */
+/* ============================== DOSSIER ====================================
+   "Confidential" made literal: a classified document on a desk.
+   Light (default) = warm paper + ink + vermillion wax seal + stamp green.
+   Dark = the same desk at midnight - warm charcoal, cream ink, seal unchanged.
+   Ciphertext renders as redaction bars (see CipherValue).
+   ========================================================================= */
 :root {
-  --bg: #f6f6fc;
-  --panel: #ffffff;
-  --panel-2: #f0effa;
-  --line: #e6e4f1;
-  --fg: #17131f;
-  --muted: #6b6782;
-  --primary: #6d28d9;
-  --primary-h: #5b21b6;
-  --secondary: #0d9488;
-  --onaccent: #ffffff;
-  --pos: #059669;
-  --neg: #e11d48;
-  --glow-1: rgba(109, 40, 217, 0.1);
-  --glow-2: rgba(13, 148, 136, 0.08);
+  --bg: #f5f0e6;
+  --panel: #fdfaf3;
+  --panel-2: #ede6d6;
+  --line: #ddd2bc;
+  --fg: #1c170f;
+  --muted: #776c58;
+  --primary: #c73e12; /* vermillion - the wax seal */
+  --primary-h: #a93407;
+  --secondary: #2f6b4f; /* stamp green - links, "approved" */
+  --onaccent: #fff9ef;
+  --pos: #2f6b4f;
+  --neg: #9c2007;
+  --manila: #f0e5c9;
+  --redaction: #241e12; /* the bar that hides a number */
+  --shadow-panel:
+    0 1px 2px rgba(28, 23, 15, 0.05),
+    0 14px 36px -28px rgba(28, 23, 15, 0.4);
 }
 
 .dark {
-  --bg: #0a0911;
-  --panel: #14121e;
-  --panel-2: #1c1a2b;
-  --line: #2a2740;
-  --fg: #ece9f7;
-  --muted: #9a96b5;
-  --primary: #a78bfa;
-  --primary-h: #c4b5fd;
-  --secondary: #2dd4bf;
-  --onaccent: #161320;
-  --pos: #34d399;
-  --neg: #fb7185;
-  --glow-1: rgba(124, 58, 237, 0.18);
-  --glow-2: rgba(45, 212, 191, 0.1);
+  --bg: #16110b;
+  --panel: #1f1911;
+  --panel-2: #292216;
+  --line: #3b3221;
+  --fg: #efe6d3;
+  --muted: #a3957c;
+  --primary: #e8500f;
+  --primary-h: #f4632b;
+  --secondary: #83c09e;
+  --onaccent: #fff6ea;
+  --pos: #83c09e;
+  --neg: #e86a4e;
+  --manila: #2e2717;
+  --redaction: #efe6d3;
+  --shadow-panel: 0 1px 0 rgba(239, 230, 211, 0.03);
 }
 
 @theme inline {
@@ -51,8 +59,11 @@
   --color-onaccent: var(--onaccent);
   --color-pos: var(--pos);
   --color-neg: var(--neg);
+  --color-manila: var(--manila);
+  --color-redaction: var(--redaction);
   --font-sans: "Inter", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Fraunces", "Georgia", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
 html {
@@ -62,50 +73,189 @@ html {
 body {
   @apply bg-ink text-fg antialiased;
   min-height: 100vh;
-  background-image:
-    radial-gradient(1100px 480px at 82% -8%, var(--glow-1), transparent),
-    radial-gradient(820px 380px at 8% -10%, var(--glow-2), transparent);
 }
+
+/* Paper grain: a whisper of noise so surfaces read as stock, not pixels. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Display type: headlines are set in a serif, like a document title block. */
+.font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 40;
+  letter-spacing: -0.01em;
+}
+
+/* ------------------------------ Surfaces ------------------------------- */
 
 .panel {
-  @apply bg-panel border border-line rounded-2xl;
-  box-shadow: 0 1px 2px rgba(20, 14, 40, 0.04);
-}
-.dark .panel {
-  box-shadow: none;
+  @apply bg-panel border border-line rounded-lg;
+  box-shadow: var(--shadow-panel);
 }
 
+/* A sheet of paper that matters: doubled rule at top, like a letterhead. */
+.sheet {
+  @apply bg-panel border border-line rounded-lg;
+  box-shadow: var(--shadow-panel);
+  border-top: 3px double var(--line);
+}
+
+/* --------------------------------- Type -------------------------------- */
+
+/* The recurring section label: small caps over a document field. */
+.label {
+  @apply text-[11px] font-bold uppercase tracking-[0.14em] text-muted;
+}
+
+.link {
+  @apply text-accent-2 underline decoration-accent-2/40 underline-offset-2 hover:decoration-accent-2 transition-colors;
+}
+
+/* ------------------------------- Controls ------------------------------ */
+
 .btn {
-  @apply px-4 py-2 rounded-xl font-semibold text-sm transition-colors cursor-pointer
+  @apply px-4 py-2 rounded-md font-semibold text-sm transition-all cursor-pointer
     disabled:opacity-40 disabled:cursor-not-allowed;
 }
 
+/* Primary action = the wax seal: pressed like a stamp. */
 .btn-primary {
-  @apply px-4 py-2 rounded-xl font-semibold text-sm transition-colors cursor-pointer
+  @apply px-4 py-2 rounded-md font-semibold text-sm transition-all cursor-pointer
     disabled:opacity-40 disabled:cursor-not-allowed;
   background-color: var(--primary);
   color: var(--onaccent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 249, 239, 0.18),
+    0 1px 2px rgba(28, 23, 15, 0.25);
 }
 .btn-primary:hover:not(:disabled) {
   background-color: var(--primary-h);
 }
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgba(28, 23, 15, 0.25);
+}
 
 .btn-ghost {
-  @apply px-4 py-2 rounded-xl font-semibold text-sm transition-colors cursor-pointer
-    disabled:opacity-40 disabled:cursor-not-allowed bg-panel-2 text-fg border border-line;
+  @apply px-4 py-2 rounded-md font-semibold text-sm transition-all cursor-pointer
+    disabled:opacity-40 disabled:cursor-not-allowed bg-panel text-fg border border-line;
 }
 .btn-ghost:hover:not(:disabled) {
   border-color: var(--primary);
+  color: var(--primary);
+}
+.btn-ghost:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .input {
-  @apply w-full bg-panel-2 border border-line rounded-xl px-3 py-2 text-sm font-mono
-    focus:outline-none placeholder:text-muted;
+  @apply w-full bg-panel border border-line rounded-md px-3 py-2 text-sm font-mono
+    placeholder:text-muted/70 transition-colors;
 }
 .input:focus {
+  outline: none;
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
 }
 
+/* Keyboard users always get a visible ring. */
+:where(button, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* --------------------------------- Marks ------------------------------- */
+
+/* Filing tag: square-cornered, bordered, like an index label. */
 .tag {
-  @apply text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full;
+  @apply text-[10px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded-[3px] border;
+}
+
+/* Rubber stamp: rotated, double-bordered, inked unevenly. */
+.stamp {
+  @apply inline-block text-[10px] font-black uppercase tracking-[0.22em] px-2.5 py-1 rounded-[3px] select-none;
+  border: 2px solid currentColor;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
+  transform: rotate(-3deg);
+  opacity: 0.85;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='40'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='2'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='4' intercept='-0.6'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' fill='white'/%3E%3Crect width='100%25' height='100%25' filter='url(%23r)' opacity='0.35'/%3E%3C/svg%3E");
+}
+
+/* Redaction bar: what the chain sees. Subtle sheen sweeps across it. */
+.redaction {
+  @apply inline-block align-middle rounded-[2px] select-none;
+  background-color: var(--redaction);
+  background-image: linear-gradient(
+    105deg,
+    transparent 40%,
+    color-mix(in srgb, var(--bg) 22%, transparent) 50%,
+    transparent 60%
+  );
+  background-size: 220% 100%;
+  animation: redaction-sheen 3.2s ease-in-out infinite;
+}
+@keyframes redaction-sheen {
+  0%,
+  55% {
+    background-position: 130% 0;
+  }
+  100% {
+    background-position: -60% 0;
+  }
+}
+
+/* Perforated rule: where a document tears. */
+.rule-dashed {
+  border-top: 1px dashed var(--line);
+}
+
+/* ------------------------------ Skeletons ------------------------------ */
+
+.skeleton {
+  @apply rounded-md bg-panel-2;
+  background-image: linear-gradient(
+    100deg,
+    transparent 36%,
+    color-mix(in srgb, var(--fg) 5%, transparent) 50%,
+    transparent 64%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-sweep {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -80% 0;
+  }
+}
+
+/* --------------------------- Reduced motion ---------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .redaction,
+  .skeleton {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

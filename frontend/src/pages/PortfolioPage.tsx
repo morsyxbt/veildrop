@@ -19,16 +19,16 @@ export function PortfolioPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-        <h1 className="text-2xl font-black tracking-tight">Portfolio</h1>
+        <h1 className="font-display text-3xl font-black tracking-tight">Portfolio</h1>
         <p className="mt-1 text-sm text-muted">
           Every confidential token you hold on Sepolia. Balances are encrypted on-chain - only you can decrypt them.
         </p>
       </motion.div>
 
       {!isConnected || !address ? (
-        <div className="panel p-6 mt-6 flex items-center justify-between">
+        <div className="sheet p-6 mt-6 flex items-center justify-between gap-4">
           <span className="text-sm text-muted">Connect a wallet to view your confidential balances.</span>
-          <button className="btn-primary text-sm" onClick={open}>
+          <button className="btn-primary text-sm shrink-0" onClick={open}>
             Connect
           </button>
         </div>
@@ -109,38 +109,42 @@ export function Portfolio({ address }: { address: Address }) {
   }
 
   return (
-    <div className="panel p-5">
+    <div className="sheet p-5">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Your confidential balances</div>
+        <div className="label">Your confidential balances</div>
         <div className="flex items-center gap-3">
-          <span className="text-[10px] text-muted">
-            {scanning ? "scanning…" : `${tokens.length} token${tokens.length === 1 ? "" : "s"}`}
-          </span>
+          {scanning ? (
+            <span className="skeleton inline-block h-3 w-16" aria-label="Scanning for tokens" />
+          ) : (
+            <span className="text-[10px] text-muted">
+              {tokens.length} token{tokens.length === 1 ? "" : "s"} on file
+            </span>
+          )}
           <button
             onClick={() => setRevealed((r) => !r)}
             disabled={tokens.length === 0}
             className="btn-ghost text-xs whitespace-nowrap"
             title="Decrypts every balance at once with your wallet - only you can read them"
           >
-            {revealed ? "🔒 Hide balances" : "🔓 Reveal all"}
+            {revealed ? "Hide balances" : "Reveal all"}
           </button>
         </div>
       </div>
 
-      <div className="mt-3 divide-y divide-line/60">
+      <div className="mt-3 space-y-2">
         {tokens.map((t) => (
           <TokenRow
             key={t}
             token={t}
             revealed={revealed}
             loading={balances.isLoading}
-            balance={results?.get(t) ?? results?.get(t.toLowerCase() as Address)}
+            balance={results?.get(t) ?? results?.get(t.toLowerCase() as Address) ?? results?.get(getAddress(t))}
           />
         ))}
       </div>
 
       {/* Watch any token */}
-      <div className="mt-4 pt-4 border-t border-line/60">
+      <div className="mt-4 pt-4 rule-dashed">
         <div className="flex gap-2">
           <input
             value={input}
@@ -150,10 +154,10 @@ export function Portfolio({ address }: { address: Address }) {
             }}
             onKeyDown={(e) => e.key === "Enter" && addToken()}
             placeholder="Watch any ERC-7984 token (0x…)"
-            className="flex-1 rounded-xl bg-panel-2 border border-line px-3 py-2 text-sm font-mono outline-none focus:border-accent"
+            className="input flex-1 text-sm"
           />
           <button onClick={addToken} className="btn-ghost text-sm whitespace-nowrap">
-            + Add
+            Add
           </button>
         </div>
         {inputErr && <p className="mt-2 text-[11px] text-neg">{inputErr}</p>}
@@ -183,22 +187,13 @@ function TokenRow({
   const symbol = meta.symbol || (meta.loading ? "…" : "token");
 
   return (
-    <div className="flex items-center justify-between gap-3 py-3">
+    <div className="flex items-center justify-between gap-3 bg-manila/50 border border-line rounded-md px-3 py-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold">{symbol}</span>
-          {isDemo && (
-            <span className="text-[9px] font-bold uppercase tracking-wider text-accent-2 bg-accent-2/10 rounded px-1.5 py-0.5">
-              demo
-            </span>
-          )}
+          {isDemo && <span className="tag bg-panel-2 text-accent-2 border-line">demo</span>}
         </div>
-        <a
-          href={explorerAddr(token)}
-          target="_blank"
-          rel="noreferrer"
-          className="text-[10px] font-mono text-muted hover:text-accent-2"
-        >
+        <a href={explorerAddr(token)} target="_blank" rel="noreferrer" className="link text-[10px] font-mono">
           {shortAddr(token)} ↗
         </a>
       </div>
@@ -207,9 +202,9 @@ function TokenRow({
         {!revealed ? (
           <CipherValue value="000000" hidden chars={7} className="text-base" />
         ) : loading ? (
-          <span className="text-xs text-muted animate-pulse">Decrypting…</span>
+          <span className="skeleton inline-block h-4 w-24 align-middle" aria-label="Decrypting balance" />
         ) : balance === undefined ? (
-          <span className="text-xs text-muted">unavailable</span>
+          <span className="text-xs text-muted">couldn't decrypt</span>
         ) : (
           <span className="text-base font-black">
             {fmtToken(balance, meta.decimals)} <span className="text-muted text-xs font-bold">{symbol}</span>

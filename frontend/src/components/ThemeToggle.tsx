@@ -8,7 +8,7 @@ export function ThemeToggle() {
       onClick={toggle}
       aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
       title={dark ? "Light mode" : "Dark mode"}
-      className="grid place-items-center w-9 h-9 rounded-xl bg-panel-2 border border-line text-fg hover:border-accent transition-colors"
+      className="grid place-items-center w-9 h-9 rounded-md bg-panel border border-line text-fg hover:border-accent transition-colors"
     >
       {dark ? (
         // sun

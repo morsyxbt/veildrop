@@ -14,6 +14,9 @@ contract DemoERC20 is ERC20 {
         _decimals = decimals_;
     }
 
+    /// @notice Decimals as configured at deploy time (default ERC-20 is fixed at 18).
+    /// @dev Lets tests and demos exercise the wrapper's rate conversion against
+    ///      underlying tokens with different precisions.
     function decimals() public view override returns (uint8) {
         return _decimals;
     }

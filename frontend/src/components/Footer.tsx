@@ -1,79 +1,80 @@
 import { Link } from "react-router-dom";
 
 import { DEMO_TOKEN, explorerAddr } from "../lib/config";
-import { Logo } from "./Logo";
+import { LogoMark } from "./Logo";
 
+// Document footer: a slim colophon over a classification strip - nothing like
+// a marketing site's link grid.
 export function Footer() {
   return (
-    <footer className="border-t border-line mt-16 bg-panel/40">
-      <div className="max-w-5xl mx-auto px-4 py-10 grid md:grid-cols-[1.6fr_1fr_1fr] gap-8">
-        <div>
-          <Logo withTag />
-          <p className="text-[11px] text-muted mt-3 leading-relaxed max-w-72">
-            Send tokens to a whole list with every amount encrypted on-chain. Recipients decrypt only
-            their own allocation.
-          </p>
-          <div className="flex gap-1.5 mt-3">
-            <span className="tag bg-panel-2 text-accent-2 border border-line">Sepolia</span>
-            <span className="tag bg-panel-2 text-pos border border-line">ERC-7984</span>
-            <span className="tag bg-panel-2 text-accent border border-line">TokenOps SDK</span>
+    <footer className="mt-20">
+      <div className="rule-dashed" />
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <LogoMark size={28} />
+            <div>
+              <div className="font-display font-black tracking-tight">
+                Veil<span className="text-accent">drop</span>
+              </div>
+              <p className="text-[11px] text-muted max-w-64 leading-relaxed">
+                Pay a whole list at once. Every amount stays encrypted on-chain; each recipient decrypts
+                only their own.
+              </p>
+            </div>
           </div>
-        </div>
 
-        <FooterCol
-          title="Product"
-          links={[
-            { label: "Distribute", to: "/distribute" },
-            { label: "Claim", to: "/claim" },
-            { label: "Faucet", to: "/faucet" },
-            { label: "How it works", to: "/how-it-works" },
-          ]}
-        />
-        <FooterCol
-          title="Built on"
-          links={[
-            { label: "TokenOps SDK", href: "https://docs.tokenops.xyz" },
-            { label: "ERC-7984 standard", href: "https://docs.zama.org/protocol/examples/openzeppelin-confidential-contracts/erc7984" },
-            { label: "Zama Protocol docs", href: "https://docs.zama.org/protocol" },
-            { label: "Demo token", href: `${explorerAddr(DEMO_TOKEN)}#code` },
-          ]}
-        />
+          <nav className="flex flex-wrap gap-x-6 gap-y-2 text-xs" aria-label="Footer">
+            <Link to="/distribute" className="text-fg hover:text-accent transition-colors">
+              Distribute
+            </Link>
+            <Link to="/claim" className="text-fg hover:text-accent transition-colors">
+              Claims
+            </Link>
+            <Link to="/portfolio" className="text-fg hover:text-accent transition-colors">
+              Portfolio
+            </Link>
+            <Link to="/campaigns" className="text-fg hover:text-accent transition-colors">
+              Your campaigns
+            </Link>
+            <Link to="/create" className="text-fg hover:text-accent transition-colors">
+              Create a token
+            </Link>
+            <Link to="/faucet" className="text-fg hover:text-accent transition-colors">
+              Faucet
+            </Link>
+            <Link to="/how-it-works" className="text-fg hover:text-accent transition-colors">
+              How it works
+            </Link>
+          </nav>
+
+          <nav className="flex flex-wrap gap-x-6 gap-y-2 text-xs" aria-label="Built on">
+            <a href="https://docs.tokenops.xyz" target="_blank" rel="noreferrer" className="text-muted hover:text-accent transition-colors">
+              TokenOps SDK ↗
+            </a>
+            <a
+              href="https://docs.zama.org/protocol"
+              target="_blank"
+              rel="noreferrer"
+              className="text-muted hover:text-accent transition-colors"
+            >
+              Zama Protocol ↗
+            </a>
+            <a href={`${explorerAddr(DEMO_TOKEN)}#code`} target="_blank" rel="noreferrer" className="text-muted hover:text-accent transition-colors">
+              Demo token ↗
+            </a>
+          </nav>
+        </div>
       </div>
-      <div className="border-t border-line/60">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex flex-wrap justify-between gap-2 text-[10px] text-muted">
-          <span>© 2026 Veildrop - Confidential token distribution</span>
-          <span>Sepolia testnet · Built with the TokenOps SDK</span>
+
+      {/* Classification strip */}
+      <div className="border-t border-line bg-manila/60">
+        <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-center gap-3 text-[10px] font-mono uppercase tracking-[0.22em] text-muted">
+          <span aria-hidden>—</span>
+          <span>Confidential · Sepolia testnet · ERC-7984 · TokenOps SDK</span>
+          <span aria-hidden>—</span>
         </div>
       </div>
     </footer>
-  );
-}
-
-function FooterCol({
-  title,
-  links,
-}: {
-  title: string;
-  links: Array<{ label: string; to?: string; href?: string }>;
-}) {
-  return (
-    <div>
-      <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-3">{title}</div>
-      <ul className="space-y-2 text-xs">
-        {links.map((l) => (
-          <li key={l.label}>
-            {l.to ? (
-              <Link to={l.to} className="text-fg hover:text-accent transition-colors">
-                {l.label}
-              </Link>
-            ) : (
-              <a href={l.href} target="_blank" rel="noreferrer" className="text-fg hover:text-accent transition-colors">
-                {l.label} ↗
-              </a>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }

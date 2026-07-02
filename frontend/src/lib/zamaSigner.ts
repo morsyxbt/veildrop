@@ -40,7 +40,9 @@ export class WagmiSigner {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async signTypedData(typedData: any): Promise<`0x${string}`> {
-    const { EIP712Domain: _omit, ...types } = typedData.types;
+    // wagmi derives the domain type itself; passing EIP712Domain through throws.
+    const types = { ...typedData.types };
+    delete types.EIP712Domain;
     return signTypedData(this.config, {
       primaryType: Object.keys(types)[0],
       types,

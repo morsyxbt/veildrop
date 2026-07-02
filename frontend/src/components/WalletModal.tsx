@@ -6,6 +6,8 @@ interface WalletModalCtx {
   open: () => void;
 }
 const Ctx = createContext<WalletModalCtx>({ open: () => {} });
+// Lives beside the provider on purpose; losing HMR fast-refresh here is fine.
+// eslint-disable-next-line react-refresh/only-export-components
 export const useWalletModal = () => useContext(Ctx);
 
 // Inline brand logos for connectors that don't self-report an icon. EIP-6963
@@ -19,12 +21,24 @@ const WALLETCONNECT_LOGO = svgUri(
 );
 
 // Friendly labels + logos per connector id.
-const META: Record<string, { label: string; hint: string; logo?: string; emoji?: string }> = {
-  injected: { label: "Browser wallet", hint: "MetaMask, Rabby, Brave", emoji: "🦊" },
-  metaMaskSDK: { label: "MetaMask", hint: "Browser or mobile", emoji: "🦊" },
+const META: Record<string, { label: string; hint: string; logo?: string }> = {
+  injected: { label: "Browser wallet", hint: "MetaMask, Rabby, Brave" },
+  metaMaskSDK: { label: "MetaMask", hint: "Browser or mobile" },
   coinbaseWalletSDK: { label: "Coinbase Wallet", hint: "Extension or mobile", logo: COINBASE_LOGO },
   walletConnect: { label: "WalletConnect", hint: "Scan with any mobile wallet", logo: WALLETCONNECT_LOGO },
 };
+
+function WalletGlyph() {
+  return (
+    <span className="grid place-items-center w-7 h-7 rounded-md bg-manila border border-line shrink-0 text-muted">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+        <rect x="2" y="6" width="20" height="14" rx="3" />
+        <path d="M16 13h4" strokeLinecap="round" />
+        <path d="M4 6.5 6.5 3h9L18 6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
+}
 
 export function WalletModalProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -35,12 +49,17 @@ export function WalletModalProvider({ children }: { children: ReactNode }) {
     connect({ connector }, { onSuccess: () => setIsOpen(false) });
   }
 
-  // Move focus into the dialog on open; return it to the trigger on close.
+  // Move focus into the dialog on open; return it to the trigger on close. The
+  // trigger may be gone by then (the Connect button becomes an address chip after
+  // connecting) - fall back to the header so focus doesn't drop to <body>.
   useEffect(() => {
     if (!isOpen) return;
     const previous = document.activeElement as HTMLElement | null;
     panelRef.current?.focus();
-    return () => previous?.focus();
+    return () => {
+      if (previous && document.contains(previous)) previous.focus();
+      else document.querySelector<HTMLElement>("header button, header a")?.focus();
+    };
   }, [isOpen]);
 
   // Escape closes; Tab cycles within the dialog instead of escaping it.
@@ -56,10 +75,14 @@ export function WalletModalProvider({ children }: { children: ReactNode }) {
     if (focusables.length === 0) return;
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
+    // Focus can sit on the panel container itself right after open - treat any
+    // position outside the focusable list as an edge, or Shift+Tab escapes.
+    const active = document.activeElement as HTMLElement | null;
+    const inList = !!active && Array.from(focusables).includes(active);
+    if (e.shiftKey && (!inList || active === first)) {
       e.preventDefault();
       last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
+    } else if (!e.shiftKey && (!inList || active === last)) {
       e.preventDefault();
       first.focus();
     }
@@ -84,7 +107,7 @@ export function WalletModalProvider({ children }: { children: ReactNode }) {
               aria-modal="true"
               aria-labelledby="wallet-modal-title"
               tabIndex={-1}
-              className="panel p-5 w-full max-w-sm outline-none"
+              className="sheet p-5 w-full max-w-sm outline-none"
               initial={{ scale: 0.96, y: 8 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.96, opacity: 0 }}
@@ -92,7 +115,7 @@ export function WalletModalProvider({ children }: { children: ReactNode }) {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
-                <div id="wallet-modal-title" className="font-black tracking-tight">
+                <div id="wallet-modal-title" className="font-display font-black tracking-tight">
                   Connect a wallet
                 </div>
                 <button
@@ -116,12 +139,12 @@ export function WalletModalProvider({ children }: { children: ReactNode }) {
                       key={c.uid}
                       onClick={() => pick(c)}
                       disabled={isPending}
-                      className="w-full flex items-center gap-3 bg-panel-2 border border-line hover:border-accent rounded-xl px-3 py-3 text-left transition-colors disabled:opacity-60"
+                      className="w-full flex items-center gap-3 bg-manila/50 border border-line hover:border-accent rounded-md px-3 py-3 text-left transition-colors disabled:opacity-60"
                     >
                       {src ? (
-                        <img src={src} alt="" className="w-7 h-7 rounded-lg shrink-0" />
+                        <img src={src} alt="" className="w-7 h-7 rounded-md shrink-0" />
                       ) : (
-                        <span className="text-xl w-7 text-center shrink-0">{m?.emoji ?? "👛"}</span>
+                        <WalletGlyph />
                       )}
                       <span className="flex-1 min-w-0">
                         <span className="block text-sm font-semibold truncate">{label}</span>

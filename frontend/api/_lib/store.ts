@@ -40,13 +40,16 @@ export interface TokenRecord {
 }
 
 interface Store {
-  put(rec: CampaignRecord): Promise<void>;
+  // `prev` (the record being replaced, if any) lets put() drop stale recipient
+  // index members when an upsert removes entries.
+  put(rec: CampaignRecord, prev?: CampaignRecord | null): Promise<void>;
   get(airdrop: string): Promise<CampaignRecord | null>;
   listByCreator(creator: string): Promise<CampaignRecord[]>;
   listByRecipient(recipient: string): Promise<CampaignRecord[]>;
   setSlug(slug: string, airdrop: string): Promise<boolean>;
   getBySlug(slug: string): Promise<string | null>;
   addToken(rec: TokenRecord): Promise<void>;
+  getToken(address: string): Promise<TokenRecord | null>;
   listTokens(owner: string): Promise<TokenRecord[]>;
 }
 
@@ -66,6 +69,22 @@ function upstash(): Store | null {
     return (await r.json()).result as T;
   }
 
+  // All commands in one HTTPS round trip. A campaign save touches one key per
+  // recipient; issued sequentially, a few hundred recipients would blow past the
+  // serverless time budget - pipelined, it's a single request.
+  async function pipeline(commands: (string | number)[][]): Promise<void> {
+    if (!commands.length) return;
+    const r = await fetch(`${url}/pipeline`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(commands),
+    });
+    if (!r.ok) throw new Error(`upstash pipeline ${r.status}`);
+    const results = (await r.json()) as { error?: string }[];
+    const failed = results.find((x) => x && x.error);
+    if (failed) throw new Error(`upstash: ${failed.error}`);
+  }
+
   async function fetchMany(ids: string[]): Promise<CampaignRecord[]> {
     if (!ids.length) return [];
     const vals = await cmd<(string | null)[]>(["MGET", ...ids.map((a) => `campaign:${a}`)]);
@@ -73,12 +92,18 @@ function upstash(): Store | null {
   }
 
   return {
-    async put(rec) {
-      await cmd(["SET", `campaign:${rec.airdrop}`, JSON.stringify(rec)]);
-      await cmd(["SADD", `creator:${rec.creator}`, rec.airdrop]);
-      for (const addr of Object.keys(rec.entries)) {
-        await cmd(["SADD", `recipient:${addr.toLowerCase()}`, rec.airdrop]);
+    async put(rec, prev) {
+      const next = new Set(Object.keys(rec.entries).map((a) => a.toLowerCase()));
+      const commands: (string | number)[][] = [
+        ["SET", `campaign:${rec.airdrop}`, JSON.stringify(rec)],
+        ["SADD", `creator:${rec.creator}`, rec.airdrop],
+      ];
+      for (const addr of next) commands.push(["SADD", `recipient:${addr}`, rec.airdrop]);
+      for (const addr of Object.keys(prev?.entries ?? {})) {
+        const a = addr.toLowerCase();
+        if (!next.has(a)) commands.push(["SREM", `recipient:${a}`, rec.airdrop]);
       }
+      await pipeline(commands);
     },
     async get(airdrop) {
       const v = await cmd<string | null>(["GET", `campaign:${airdrop}`]);
@@ -101,8 +126,14 @@ function upstash(): Store | null {
       return (await cmd<string | null>(["GET", `slug:${slug}`])) ?? null;
     },
     async addToken(rec) {
-      await cmd(["SET", `token:${rec.address}`, JSON.stringify(rec)]);
-      await cmd(["SADD", `owner-tokens:${rec.owner}`, rec.address]);
+      await pipeline([
+        ["SET", `token:${rec.address}`, JSON.stringify(rec)],
+        ["SADD", `owner-tokens:${rec.owner}`, rec.address],
+      ]);
+    },
+    async getToken(address) {
+      const v = await cmd<string | null>(["GET", `token:${address}`]);
+      return v ? (JSON.parse(v) as TokenRecord) : null;
     },
     async listTokens(owner) {
       const ids = (await cmd<string[] | null>(["SMEMBERS", `owner-tokens:${owner}`])) ?? [];
@@ -120,12 +151,16 @@ const memRecipients = new Map<string, Set<string>>();
 const memTokens = new Map<string, TokenRecord>();
 const memOwnerTokens = new Map<string, Set<string>>();
 const memStore: Store = {
-  async put(rec) {
+  async put(rec, prev) {
     mem.set(rec.airdrop, rec);
-    for (const addr of Object.keys(rec.entries)) {
-      const a = addr.toLowerCase();
+    const next = new Set(Object.keys(rec.entries).map((a) => a.toLowerCase()));
+    for (const a of next) {
       if (!memRecipients.has(a)) memRecipients.set(a, new Set());
       memRecipients.get(a)!.add(rec.airdrop);
+    }
+    for (const addr of Object.keys(prev?.entries ?? {})) {
+      const a = addr.toLowerCase();
+      if (!next.has(a)) memRecipients.get(a)?.delete(rec.airdrop);
     }
   },
   async get(airdrop) {
@@ -151,6 +186,9 @@ const memStore: Store = {
     if (!memOwnerTokens.has(rec.owner)) memOwnerTokens.set(rec.owner, new Set());
     memOwnerTokens.get(rec.owner)!.add(rec.address);
   },
+  async getToken(address) {
+    return memTokens.get(address) ?? null;
+  },
   async listTokens(owner) {
     const ids = memOwnerTokens.get(owner) ?? new Set<string>();
     return [...ids].map((a) => memTokens.get(a)).filter((r): r is TokenRecord => !!r);
@@ -159,6 +197,15 @@ const memStore: Store = {
 
 let cached: Store | null = null;
 export function getStore(): Store {
-  if (!cached) cached = upstash() ?? memStore;
+  if (!cached) {
+    const up = upstash();
+    // On Vercel each route is its own lambda with its own memory, so the memory
+    // fallback would "accept" writes that other routes can never read. Fail loudly
+    // instead; handleApi turns this into a 500 with a clear message.
+    if (!up && process.env.VERCEL) {
+      throw new Error("storage not configured: set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN");
+    }
+    cached = up ?? memStore;
+  }
   return cached;
 }

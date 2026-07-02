@@ -20,6 +20,7 @@ contract ConfidentialMintableToken is ERC7984, ZamaEthereumConfig, Ownable {
     /// @notice Total amount minted so far (6-decimal units), used to enforce the cap.
     uint64 public totalMinted;
 
+    /// @dev A mint would push `totalMinted` past the (non-zero) `cap`.
     error CapExceeded();
 
     constructor(
@@ -32,6 +33,11 @@ contract ConfidentialMintableToken is ERC7984, ZamaEthereumConfig, Ownable {
     }
 
     /// @notice Mint `amount` (6-decimal units) of confidential tokens to `to`. Owner only.
+    /// @dev The amount is public calldata by design (the deployer's mints are not
+    ///      secret); it becomes an encrypted balance the moment it is stored.
+    /// @param to Recipient of the newly minted confidential balance.
+    /// @param amount Amount to mint, in 6-decimal units. Reverts with {CapExceeded}
+    ///        if a non-zero cap would be exceeded.
     function mint(address to, uint64 amount) external onlyOwner {
         uint64 minted = totalMinted + amount;
         if (cap != 0 && minted > cap) revert CapExceeded();

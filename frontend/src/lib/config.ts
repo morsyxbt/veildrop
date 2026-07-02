@@ -1,7 +1,3 @@
-import { sepolia } from "wagmi/chains";
-
-export const CHAIN = sepolia;
-
 // Demo confidential token (ConfidentialToken.sol), deployed via deploy/001_token.ts.
 // Set VITE_DEMO_TOKEN in frontend/.env after deploying. The faucet mints this token
 // so reviewers have something to distribute.

@@ -9,21 +9,6 @@ export function fmt6(amount: bigint, maxFraction = 4): string {
   return fracStr ? `${whole.toLocaleString()}.${fracStr}` : whole.toLocaleString();
 }
 
-/** Parse a user-typed decimal into 6-decimal units. Returns null when invalid. */
-export function parse6(text: string): bigint | null {
-  const trimmed = text.trim();
-  if (!/^\d+(\.\d{0,6})?$/.test(trimmed)) return null;
-  const [whole, frac = ""] = trimmed.split(".");
-  return BigInt(whole) * UNIT + BigInt(frac.padEnd(6, "0") || "0");
-}
-
-/** 6-decimal bigint -> plain input string ("1234.5678", no grouping). */
-export function toInputString(v: bigint): string {
-  const whole = v / UNIT;
-  const frac = (v % UNIT).toString().padStart(6, "0").replace(/0+$/, "");
-  return frac ? `${whole}.${frac}` : whole.toString();
-}
-
 // ---- Generic (arbitrary-decimals) variants for bring-your-own-token ----
 
 /** Format a token amount with `decimals` for display (grouped, trimmed). */
@@ -36,13 +21,22 @@ export function fmtToken(amount: bigint, decimals: number, maxFraction = 4): str
   return fracStr ? `${whole.toLocaleString()}.${fracStr}` : whole.toLocaleString();
 }
 
-/** Parse a user-typed decimal into `decimals` units. Returns null when invalid. */
+/** Parse a user-typed decimal into `decimals` units. Returns null when invalid.
+ *  Accepts spreadsheet-style digit grouping ("1,500"); rejects values that can't
+ *  fit a euint64 (they would only fail later, deep inside encryption). */
 export function parseToken(text: string, decimals: number): bigint | null {
-  const trimmed = text.trim();
+  const trimmed = stripDigitGroups(text.trim());
   if (!new RegExp(`^\\d+(\\.\\d{0,${decimals}})?$`).test(trimmed)) return null;
   const [whole, frac = ""] = trimmed.split(".");
   const unit = 10n ** BigInt(decimals);
-  return BigInt(whole) * unit + BigInt(frac.padEnd(decimals, "0") || "0");
+  const v = BigInt(whole) * unit + BigInt(frac.padEnd(decimals, "0") || "0");
+  return v < 2n ** 64n ? v : null;
+}
+
+/** Remove thousands separators ("1,500,000" -> "1500000") without touching
+ *  commas that aren't between digit groups of three. */
+export function stripDigitGroups(text: string): string {
+  return text.replace(/(\d),(?=\d{3}\b)/g, "$1");
 }
 
 export function shortAddr(addr: string): string {

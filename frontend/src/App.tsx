@@ -1,23 +1,36 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Link, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
 import { Footer } from "./components/Footer";
 import { Nav } from "./components/Nav";
-import { CampaignsPage } from "./pages/CampaignsPage";
-import { ClaimPage } from "./pages/ClaimPage";
-import { CreatePage } from "./pages/CreatePage";
-import { DistributePage } from "./pages/DistributePage";
-import { FaucetPage } from "./pages/FaucetPage";
-import { HowItWorks } from "./pages/HowItWorks";
 import { Landing } from "./pages/Landing";
-import { PortfolioPage } from "./pages/PortfolioPage";
+
+// The landing paints immediately; every other page loads on demand so the
+// first impression isn't waiting on the whole app bundle.
+const CampaignsPage = lazy(() => import("./pages/CampaignsPage").then((m) => ({ default: m.CampaignsPage })));
+const ClaimPage = lazy(() => import("./pages/ClaimPage").then((m) => ({ default: m.ClaimPage })));
+const CreatePage = lazy(() => import("./pages/CreatePage").then((m) => ({ default: m.CreatePage })));
+const DistributePage = lazy(() => import("./pages/DistributePage").then((m) => ({ default: m.DistributePage })));
+const FaucetPage = lazy(() => import("./pages/FaucetPage").then((m) => ({ default: m.FaucetPage })));
+const HowItWorks = lazy(() => import("./pages/HowItWorks").then((m) => ({ default: m.HowItWorks })));
+const PortfolioPage = lazy(() => import("./pages/PortfolioPage").then((m) => ({ default: m.PortfolioPage })));
+
+function PageFallback() {
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-10 space-y-4" aria-busy="true" aria-label="Loading page">
+      <div className="skeleton h-8 w-56" />
+      <div className="skeleton h-4 w-80" />
+      <div className="skeleton h-44 w-full" />
+    </div>
+  );
+}
 
 function NotFound() {
   return (
     <div className="max-w-xl mx-auto px-4 py-16 text-center">
-      <div className="text-5xl font-black tracking-tight text-muted">404</div>
-      <h1 className="mt-3 text-xl font-black tracking-tight">This page doesn't exist</h1>
-      <p className="mt-2 text-sm text-muted">
+      <span className="stamp text-muted">No such file</span>
+      <h1 className="mt-4 font-display text-4xl font-black tracking-tight">404</h1>
+      <p className="mt-3 text-sm text-muted">
         If you followed a claim link, check that you copied the whole URL - the part after # matters.
       </p>
       <div className="mt-6 flex items-center justify-center gap-3">
@@ -41,7 +54,9 @@ function Shell() {
     <div className="min-h-screen flex flex-col">
       {pathname !== "/" && <Nav />}
       <div className="flex-1">
-        <Outlet />
+        <Suspense fallback={<PageFallback />}>
+          <Outlet />
+        </Suspense>
       </div>
       <Footer />
     </div>

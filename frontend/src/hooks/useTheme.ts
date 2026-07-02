@@ -4,23 +4,22 @@ type Theme = "light" | "dark";
 const KEY = "veildrop-theme";
 const EVT = "veildrop-theme-change";
 
-// Build a theme-matched favicon as an inline SVG data URI. The droplet stays
-// violet→teal; only the tile + veil cells flip with the theme, so the tab icon
-// tracks the in-app light/dark toggle.
+// Build a theme-matched favicon as an inline SVG data URI: the Dossier
+// envelope + wax seal, on a manila tile that flips with the theme so the tab
+// icon tracks the in-app light/dark toggle.
 function faviconDataUri(dark: boolean): string {
-  const tile = dark ? "#14121e" : "#ece9f7";
+  const tile = dark ? "#2e2717" : "#f0e5c9";
+  const ink = dark ? "#efe6d3" : "#1c170f";
+  const seal = dark ? "#e8500f" : "#c73e12";
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">` +
-    `<defs><linearGradient id="g" x1="32" y1="10" x2="32" y2="54" gradientUnits="userSpaceOnUse">` +
-    `<stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#2dd4bf"/></linearGradient>` +
-    `<clipPath id="d"><path d="M32 10 C32 10 17 26.8 17 38 a15 15 0 0 0 30 0 C47 26.8 32 10 32 10 Z"/></clipPath></defs>` +
-    `<rect width="64" height="64" rx="16" fill="${tile}"/>` +
-    `<g clip-path="url(#d)"><rect x="12" y="8" width="40" height="46" fill="url(#g)"/>` +
-    `<g fill="${tile}" opacity="0.92">` +
-    `<rect x="18" y="36" width="6.4" height="6.4" rx="1.4"/>` +
-    `<rect x="30.8" y="36" width="6.4" height="6.4" rx="1.4"/>` +
-    `<rect x="24.4" y="42.8" width="6.4" height="6.4" rx="1.4"/>` +
-    `<rect x="37.2" y="42.8" width="6.4" height="6.4" rx="1.4"/></g></g></svg>`;
+    `<rect width="64" height="64" rx="14" fill="${tile}"/>` +
+    `<path d="M11 16 L32 34 L53 16" fill="none" stroke="${ink}" stroke-opacity="0.55" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>` +
+    `<rect x="14" y="43" width="21" height="5.2" rx="2" fill="${ink}" opacity="0.8"/>` +
+    `<rect x="14" y="51.2" width="13" height="5.2" rx="2" fill="${ink}" opacity="0.45"/>` +
+    `<circle cx="32" cy="32.4" r="10" fill="${seal}"/>` +
+    `<circle cx="32" cy="32.4" r="5.6" fill="none" stroke="#fff6ea" stroke-opacity="0.55" stroke-width="2.2"/>` +
+    `</svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
@@ -36,11 +35,20 @@ function setFavicon(dark: boolean) {
   link.href = faviconDataUri(dark);
 }
 
+// Keep the mobile browser chrome on the page background - values must match
+// --bg for each theme in index.css.
+function setThemeColor(dark: boolean) {
+  if (typeof document === "undefined") return;
+  const meta = document.querySelector<HTMLMetaElement>("meta[name='theme-color']");
+  if (meta) meta.content = dark ? "#16110b" : "#f5f0e6";
+}
+
 // Apply the stored theme + matching favicon on first import. Default is light.
 if (typeof document !== "undefined") {
   const dark = localStorage.getItem(KEY) === "dark";
   document.documentElement.classList.toggle("dark", dark);
   setFavicon(dark);
+  setThemeColor(dark);
 }
 
 function apply(theme: Theme) {
@@ -48,6 +56,7 @@ function apply(theme: Theme) {
   document.documentElement.classList.toggle("dark", dark);
   localStorage.setItem(KEY, theme);
   setFavicon(dark);
+  setThemeColor(dark);
   window.dispatchEvent(new Event(EVT));
 }
 

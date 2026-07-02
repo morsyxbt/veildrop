@@ -28,16 +28,19 @@ export interface ClaimPayload extends ClaimEntry {
   name?: string;
 }
 
-// URL-safe base64 so a small campaign can ride in the URL hash.
+// URL-safe base64 so a small campaign can ride in the URL hash. TextEncoder/
+// TextDecoder round-trip unicode names; fatal decoding makes truncated links
+// throw (callers map that to null) instead of yielding mojibake.
 function b64urlEncode(s: string): string {
-  return btoa(unescape(encodeURIComponent(s)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  const bytes = new TextEncoder().encode(s);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 function b64urlDecode(s: string): string {
   const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
-  return decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad)));
+  const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
+  return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
 }
 
 function isEntry(e: unknown): e is ClaimEntry {
@@ -55,7 +58,14 @@ export function encodeCampaign(c: Campaign): string {
 export function decodeCampaign(encoded: string): Campaign | null {
   try {
     const c = JSON.parse(b64urlDecode(encoded)) as Campaign;
-    if (c?.airdrop && c.claims && typeof c.claims === "object") return c;
+    if (
+      typeof c?.airdrop === "string" &&
+      /^0x[a-fA-F0-9]{40}$/.test(c.airdrop) &&
+      c.claims &&
+      typeof c.claims === "object"
+    ) {
+      return c;
+    }
     return null;
   } catch {
     return null;
@@ -65,11 +75,6 @@ export function decodeCampaign(encoded: string): Campaign | null {
 /** One link, self-contained: the whole campaign rides in the hash (small lists). */
 export function portalUrl(c: Campaign): string {
   return `${origin()}/claim#c=${encodeCampaign(c)}`;
-}
-
-/** One link backed by a hosted campaign file (any size) - used by the IPFS flow. */
-export function hostedUrl(fileUrl: string): string {
-  return `${origin()}/claim?c=${encodeURIComponent(fileUrl)}`;
 }
 
 /** One link backed by our campaign store - the claim page fetches by airdrop. */
@@ -89,18 +94,21 @@ export function entryFor(c: Campaign, address: string): ClaimPayload | null {
   return e && isEntry(e) ? { airdrop: c.airdrop, name: c.name, ...e } : null;
 }
 
-/** Parse the /claim location into a source the portal can act on. */
+/** Parse the /claim location into a source the portal can act on. `invalid`
+ *  means the location clearly carried a #c= payload that didn't decode - the
+ *  page should say the link is broken, not fall back to the inbox. */
 export type ClaimSource =
   | { kind: "campaign"; campaign: Campaign }
   | { kind: "backed"; airdrop: Address }
   | { kind: "hosted"; url: string }
+  | { kind: "invalid" }
   | { kind: "none" };
 
 export function parseClaimLocation(hash: string, search: string): ClaimSource {
   const h = hash.replace(/^#/, "");
   if (h.startsWith("c=")) {
     const c = decodeCampaign(h.slice(2));
-    if (c) return { kind: "campaign", campaign: c };
+    return c ? { kind: "campaign", campaign: c } : { kind: "invalid" };
   }
   const params = new URLSearchParams(search);
   const a = params.get("a");

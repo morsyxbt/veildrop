@@ -9,6 +9,12 @@ export function campaignAuthMessage(airdrop: string): string {
   return `Veildrop: authorize campaign updates\nAirdrop: ${airdrop.toLowerCase()}`;
 }
 
+/** The message the owner wallet signs (EIP-191) to register a created/wrapped
+ *  token. Must stay byte-identical to tokenAuthMessage in api/_lib/handlers.ts. */
+export function tokenAuthMessage(token: string): string {
+  return `Veildrop: register token\nToken: ${token.toLowerCase()}`;
+}
+
 // Lightweight campaign metadata (no heavy entries) - used by the dashboard.
 export interface CampaignMeta {
   airdrop: Address;
@@ -115,7 +121,9 @@ export interface MyClaim {
 }
 
 /** Mark a campaign refunded/closed by the sender (after a successful withdraw).
- *  `auth` is the creator's signature over campaignAuthMessage(airdrop). */
+ *  `auth` is the creator's signature over campaignAuthMessage(airdrop).
+ *  Best-effort by design (errors swallowed): the withdraw itself is on-chain;
+ *  this flag only improves what the claim page shows. */
 export async function markWithdrawn(airdrop: string, auth: Hex): Promise<void> {
   await fetch("/api/withdrawn", {
     method: "POST",
@@ -144,7 +152,10 @@ export interface TokenMetaRecord {
   createdAt: number;
 }
 
-/** Record a confidential token the connected wallet created/wrapped. */
+/** Record a confidential token the connected wallet created/wrapped. `auth` is
+ *  the owner's signature over tokenAuthMessage(address); the server rejects
+ *  unsigned writes. Best-effort by design: a failed save only costs the
+ *  convenience listing - ownership stays enforced on-chain. */
 export async function saveToken(input: {
   address: Address;
   owner: Address;
@@ -153,6 +164,7 @@ export async function saveToken(input: {
   symbol?: string;
   decimals?: number;
   underlying?: string;
+  auth: Hex;
 }): Promise<void> {
   await fetch("/api/token", {
     method: "POST",

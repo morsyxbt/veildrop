@@ -34,11 +34,20 @@ interface Client {
  * Count how many recipients have claimed, from the airdrop's `Claimed` events.
  * Scans from the campaign's creation block (stored in the backend) so it stays
  * cheap even on public RPCs. Claims are on-chain, so this is read live.
+ * `partial` flags a result that may undercount: a chunk failed on the RPC, or no
+ * creation block was stored so the scan was bounded to the recent window instead
+ * of walking back to genesis (hundreds of sequential calls).
  */
-export async function countClaims(client: Client, airdrop: Address, fromBlock: number): Promise<number> {
+export async function countClaims(
+  client: Client,
+  airdrop: Address,
+  fromBlock: number,
+): Promise<{ count: number; partial: boolean }> {
   const latest = await client.getBlockNumber();
-  const start = fromBlock > 0 ? BigInt(fromBlock) : 0n;
+  const bounded = fromBlock <= 0;
+  const start = bounded ? (latest > SCAN_LOOKBACK ? latest - SCAN_LOOKBACK : 0n) : BigInt(fromBlock);
   let count = 0;
+  let partial = bounded;
   for (let from = start; from <= latest; from += CHUNK + 1n) {
     const to = from + CHUNK > latest ? latest : from + CHUNK;
     try {
@@ -50,10 +59,11 @@ export async function countClaims(client: Client, airdrop: Address, fromBlock: n
       });
       count += logs.length;
     } catch {
+      partial = true;
       continue;
     }
   }
-  return count;
+  return { count, partial };
 }
 
 /**

@@ -2,12 +2,19 @@ import { useConfidentialBalance, useShield, useUnshield, useWrapperDiscovery } f
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { formatUnits, getAddress, isAddress, parseUnits, type Address } from "viem";
-import { useAccount, useDeployContract, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { formatUnits, getAddress, isAddress, parseUnits, type Address, type Hex } from "viem";
+import {
+  useAccount,
+  useDeployContract,
+  useReadContract,
+  useSignMessage,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "wagmi";
 
 import { useWalletModal } from "../components/WalletModal";
 import { confidentialTokenAbi } from "../lib/abis";
-import { listTokens, saveToken } from "../lib/api";
+import { listTokens, saveToken, tokenAuthMessage } from "../lib/api";
 import { DEMO_TOKEN, explorerAddr, explorerTx } from "../lib/config";
 import {
   ConfidentialMintableToken_ABI,
@@ -22,6 +29,21 @@ const erc20BalAbi = [
   { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
 ] as const;
 
+// Register a created/wrapped token with the backend so Portfolio and the Create
+// page can list it. The store requires an owner signature; declining just skips
+// the convenience listing - the token itself is already live on-chain.
+async function registerToken(
+  signMessageAsync: (args: { message: string }) => Promise<Hex>,
+  input: Omit<Parameters<typeof saveToken>[0], "auth">,
+): Promise<void> {
+  try {
+    const auth = await signMessageAsync({ message: tokenAuthMessage(input.address) });
+    await saveToken({ ...input, auth });
+  } catch {
+    // signature declined or save failed - nothing to roll back
+  }
+}
+
 export function CreatePage() {
   const { isConnected } = useAccount();
   const { open } = useWalletModal();
@@ -30,22 +52,22 @@ export function CreatePage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-        <h1 className="text-2xl font-black tracking-tight">Create a confidential token</h1>
+        <h1 className="font-display text-3xl font-black tracking-tight">Create a confidential token</h1>
         <p className="mt-1 text-sm text-muted">
           Turn a public ERC-20 into an encrypted ERC-7984 token, or mint a fresh one - then distribute it privately.
         </p>
       </motion.div>
 
       {!isConnected ? (
-        <div className="panel p-6 mt-6 flex items-center justify-between">
+        <div className="sheet p-6 mt-6 flex items-center justify-between gap-4">
           <span className="text-sm text-muted">Connect a wallet on Sepolia to deploy a token.</span>
-          <button className="btn-primary text-sm" onClick={open}>
+          <button className="btn-primary text-sm shrink-0" onClick={open}>
             Connect
           </button>
         </div>
       ) : (
         <>
-          <div className="mt-6 inline-flex rounded-xl bg-panel-2 border border-line p-1">
+          <div className="mt-6 inline-flex p-1 rounded-md bg-panel-2 border border-line">
             <TabButton active={tab === "new"} onClick={() => setTab("new")}>
               Create new
             </TabButton>
@@ -64,8 +86,8 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
-        active ? "bg-accent text-onaccent" : "text-fg hover:bg-panel"
+      className={`px-4 py-1.5 rounded text-sm font-semibold transition-colors ${
+        active ? "bg-accent text-onaccent" : "text-muted hover:text-fg"
       }`}
     >
       {children}
@@ -75,10 +97,13 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 
 function DistributeHandoff({ token }: { token: Address }) {
   return (
-    <div className="mt-4 rounded-xl bg-accent/10 border border-accent/30 p-4">
-      <div className="text-sm font-semibold text-pos">Your confidential token is live.</div>
-      <div className="mt-1 text-[11px] font-mono text-muted">
-        <a href={explorerAddr(token)} target="_blank" rel="noreferrer" className="hover:text-accent-2">
+    <div className="mt-4 bg-manila/50 border border-accent/40 rounded-md p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="font-display font-black text-sm">Your confidential token is live.</div>
+        <span className="stamp text-pos text-[9px]">Live</span>
+      </div>
+      <div className="mt-1 text-[11px] font-mono">
+        <a href={explorerAddr(token)} target="_blank" rel="noreferrer" className="link">
           {token} ↗
         </a>
       </div>
@@ -93,6 +118,7 @@ function DistributeHandoff({ token }: { token: Address }) {
 
 function WrapTab() {
   const { address } = useAccount();
+  const { signMessageAsync } = useSignMessage();
   const [erc20, setErc20] = useState("");
   const raw = erc20.trim();
   const erc20Addr = isAddress(raw) ? getAddress(raw) : undefined;
@@ -107,7 +133,10 @@ function WrapTab() {
   // and the Zama curated registry.
   const [existing, setExisting] = useState<Address | null>(null);
   useEffect(() => {
+    // A new ERC-20 invalidates everything derived from the old one - without the
+    // wrapper reset, step 2/3 would keep operating on the previous token's wrapper.
     setExisting(null);
+    setWrapper(null);
     if (!erc20Addr || !address) return;
     let cancelled = false;
     listTokens(address).then((toks) => {
@@ -124,21 +153,40 @@ function WrapTab() {
   );
   const known = existing ?? (registry.data ?? null);
 
+  // Never offer a stored wrapper without confirming on-chain that it really wraps
+  // this ERC-20 - a poisoned record would otherwise route a one-click shield
+  // (approve + transfer) into an arbitrary contract.
+  const knownUnderlying = useReadContract({
+    address: known ?? undefined,
+    abi: ConfidentialWrapper_ABI,
+    functionName: "underlying",
+    query: { enabled: !!known },
+  });
+  const knownVerified =
+    !!known &&
+    !!erc20Addr &&
+    typeof knownUnderlying.data === "string" &&
+    knownUnderlying.data.toLowerCase() === erc20Addr.toLowerCase();
+
   const deploy = useDeployContract();
   const deployRcpt = useWaitForTransactionReceipt({ hash: deploy.data });
+  // Snapshot of the form at the moment "Deploy" was clicked - the receipt effect
+  // must not read live inputs, which the user may have edited while waiting.
+  const deployCtx = useRef<{ erc20: Address; sym: string; confDecimals: number } | null>(null);
   useEffect(() => {
     const a = deployRcpt.data?.contractAddress;
-    if (a && erc20Addr && address) {
+    const ctx = deployCtx.current;
+    if (a && ctx && address) {
       const addr = getAddress(a);
-      setWrapper(addr);
-      const sym = symOf(meta.symbol);
-      saveToken({
+      // Only surface it as "Ready" if the form still shows the ERC-20 it wraps.
+      if (erc20Addr === ctx.erc20) setWrapper(addr);
+      registerToken(signMessageAsync, {
         address: addr,
         owner: address,
         kind: "wrapper",
-        symbol: `c${sym}`,
-        decimals: confDecimals,
-        underlying: erc20Addr,
+        symbol: `c${ctx.sym}`,
+        decimals: ctx.confDecimals,
+        underlying: ctx.erc20,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -147,6 +195,7 @@ function WrapTab() {
   function deployWrapper() {
     if (!erc20Addr) return;
     const sym = symOf(meta.symbol);
+    deployCtx.current = { erc20: erc20Addr, sym, confDecimals };
     deploy.deployContract({
       abi: ConfidentialWrapper_ABI,
       bytecode: ConfidentialWrapper_BYTECODE,
@@ -159,19 +208,19 @@ function WrapTab() {
   return (
     <div className="space-y-4">
       {/* Step 1: pick the ERC-20 */}
-      <div className="panel p-5">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Public ERC-20 to wrap</div>
+      <div className="sheet p-5">
+        <span className="label">Public ERC-20 to wrap</span>
         <input
           value={erc20}
           onChange={(e) => setErc20(e.target.value)}
           placeholder="0x… ERC-20 token address"
-          className="mt-3 w-full rounded-xl bg-panel-2 border border-line px-3 py-2.5 text-sm font-mono outline-none focus:border-accent"
+          className="input mt-3"
         />
         <div className="mt-2 min-h-5 text-xs">
           {raw && !erc20Addr ? (
             <span className="text-neg">Not a valid address.</span>
           ) : erc20Addr && meta.loading ? (
-            <span className="text-muted animate-pulse">Reading token…</span>
+            <span className="skeleton inline-block h-3 w-28 align-middle" />
           ) : erc20Addr && meta.valid ? (
             <span className="text-pos">
               ✓ {meta.symbol} · {meta.decimals} decimals
@@ -190,21 +239,21 @@ function WrapTab() {
 
       {/* Step 2: the wrapper */}
       {erc20Addr && (
-        <div className="panel p-5">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Confidential wrapper</div>
+        <div className="sheet p-5">
+          <span className="label">Confidential wrapper</span>
           {wrapper ? (
-            <div className="mt-3 text-sm">
-              <span className="text-pos font-semibold">Wrapper ready.</span>{" "}
-              <a href={explorerAddr(wrapper)} target="_blank" rel="noreferrer" className="font-mono text-[12px] text-muted hover:text-accent-2">
+            <div className="mt-3 flex items-center gap-3 text-sm">
+              <span className="stamp text-pos">Ready</span>
+              <a href={explorerAddr(wrapper)} target="_blank" rel="noreferrer" className="link font-mono text-[12px]">
                 {shortAddr(wrapper)} ↗
               </a>
             </div>
           ) : (
             <>
-              {known && (
-                <div className="mt-3 rounded-xl bg-accent/10 border border-accent/30 p-3 flex items-center justify-between gap-3">
+              {known && knownVerified && (
+                <div className="mt-3 bg-manila/50 border border-accent/40 rounded-md p-3 flex items-center justify-between gap-3">
                   <div className="text-xs">
-                    This ERC-20 already has a confidential wrapper.{" "}
+                    This ERC-20 already has a confidential wrapper (verified on-chain).{" "}
                     <span className="font-mono text-muted">{shortAddr(known)}</span>
                   </div>
                   <button onClick={() => setWrapper(known)} className="btn-primary text-xs whitespace-nowrap">
@@ -212,28 +261,32 @@ function WrapTab() {
                   </button>
                 </div>
               )}
+              {known && !knownVerified && knownUnderlying.isLoading && (
+                <div className="mt-3 text-[11px] text-muted">Checking a known wrapper for this ERC-20…</div>
+              )}
               <p className="mt-3 text-xs text-muted leading-relaxed">
-                {known ? "Or deploy a new one" : "Deploy a confidential wrapper bound to this ERC-20"} (one transaction).
-                It becomes an ERC-7984 token you can wrap into and distribute privately.
+                {known ? "Or deploy a new one" : "Deploy a confidential wrapper bound to this ERC-20"} (one
+                transaction). Wrap public tokens into an encrypted balance, distribute them privately, and
+                unwrap back whenever you like.
               </p>
               <button onClick={deployWrapper} disabled={deploying} className="btn-primary text-sm mt-3">
                 {deploy.isPending ? "Confirm in wallet…" : deployRcpt.isLoading ? "Deploying…" : "Deploy confidential wrapper"}
               </button>
               {deploy.data && (
-                <a href={explorerTx(deploy.data)} target="_blank" rel="noreferrer" className="ml-3 text-xs text-accent-2 hover:underline">
+                <a href={explorerTx(deploy.data)} target="_blank" rel="noreferrer" className="link ml-3 text-xs">
                   view tx ↗
                 </a>
               )}
               {deploy.error && <p className="mt-2 text-xs text-neg">{cleanErr(deploy.error.message)}</p>}
 
-              <div className="mt-4 pt-4 border-t border-line/60">
+              <div className="rule-dashed mt-4 pt-4">
                 <div className="text-[10px] text-muted mb-2">Already have a wrapper address? Paste it:</div>
                 <div className="flex gap-2">
                   <input
                     value={resume}
                     onChange={(e) => setResume(e.target.value)}
                     placeholder="0x… wrapper address"
-                    className="flex-1 rounded-xl bg-panel-2 border border-line px-3 py-2 text-xs font-mono outline-none focus:border-accent"
+                    className="input flex-1 text-xs"
                   />
                   <button
                     onClick={() => isAddress(resume.trim()) && setWrapper(getAddress(resume.trim()))}
@@ -302,29 +355,29 @@ function WrapUnwrap({
   return (
     <>
       <div className="panel p-4 flex items-center justify-between gap-3">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-muted">Your confidential balance</span>
+        <span className="label">Your confidential balance</span>
         <div className="flex items-center gap-3">
           {revealBal ? (
             confBal.isLoading ? (
-              <span className="text-xs text-muted animate-pulse">Decrypting…</span>
+              <span className="skeleton inline-block h-3.5 w-24 align-middle" />
             ) : (
               <span className="text-sm font-black">
                 {fmtToken(confBal.data ?? 0n, confDecimals)} <span className="text-muted text-xs">c{symOf(symbol)}</span>
               </span>
             )
           ) : (
-            <span className="text-sm font-black tracking-widest text-muted">••••</span>
+            <span className="redaction h-3.5 w-16" aria-label="Hidden balance" />
           )}
           <button onClick={() => setRevealBal((r) => !r)} className="btn-ghost text-xs">
-            {revealBal ? "🔒" : "🔓 Reveal"}
+            {revealBal ? "Hide" : "Reveal"}
           </button>
         </div>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
         {/* Wrap */}
-        <div className="panel p-5">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Wrap → confidential</div>
+        <div className="sheet p-5">
+          <span className="label">Wrap → confidential</span>
           <p className="mt-1 text-[11px] text-muted">Public {symbol} becomes an encrypted balance.</p>
           <div className="mt-3 flex gap-2">
             <input
@@ -332,9 +385,7 @@ function WrapUnwrap({
               onChange={(e) => setWrapAmt(e.target.value)}
               inputMode="decimal"
               placeholder={`Amount in ${symbol}`}
-              className={`flex-1 rounded-xl bg-panel-2 border px-3 py-2.5 text-sm outline-none focus:border-accent ${
-                overWrap ? "border-neg" : "border-line"
-              }`}
+              className={`flex-1 ${inputCls(overWrap)}`}
             />
             {erc20Balance !== undefined && (
               <button onClick={() => setWrapAmt(formatUnits(erc20Balance, underlyingDecimals))} className="btn-ghost text-xs">
@@ -353,8 +404,8 @@ function WrapUnwrap({
         </div>
 
         {/* Unwrap */}
-        <div className="panel p-5">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Unwrap → ERC-20</div>
+        <div className="sheet p-5">
+          <span className="label">Unwrap → ERC-20</span>
           <p className="mt-1 text-[11px] text-muted">Redeem confidential back to public {symbol}.</p>
           <div className="mt-3 flex gap-2">
             <input
@@ -362,9 +413,7 @@ function WrapUnwrap({
               onChange={(e) => setUnwrapAmt(e.target.value)}
               inputMode="decimal"
               placeholder={`Amount (${confDecimals} dp)`}
-              className={`flex-1 rounded-xl bg-panel-2 border px-3 py-2.5 text-sm outline-none focus:border-accent ${
-                overUnwrap ? "border-neg" : "border-line"
-              }`}
+              className={`flex-1 ${inputCls(overUnwrap)}`}
             />
             {revealBal && confBal.data !== undefined && (
               <button onClick={() => setUnwrapAmt(formatUnits(confBal.data ?? 0n, confDecimals))} className="btn-ghost text-xs">
@@ -392,11 +441,15 @@ function WrapUnwrap({
 
 function CreateNewTab() {
   const { address } = useAccount();
+  const { signMessageAsync } = useSignMessage();
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [maxSupply, setMaxSupply] = useState("");
   const [initialMint, setInitialMint] = useState("");
   const [token, setToken] = useState<Address | null>(null);
+  // What was actually minted at deploy time, for the status line - the live
+  // inputs may be edited afterwards.
+  const [mintNote, setMintNote] = useState<{ units: bigint; symbol: string } | null>(null);
   const mintedRef = useRef(false);
 
   const capUnits = maxSupply.trim() ? safeParse(maxSupply, 6) : 0n; // 0 = uncapped
@@ -405,16 +458,33 @@ function CreateNewTab() {
   const deploy = useDeployContract();
   const deployRcpt = useWaitForTransactionReceipt({ hash: deploy.data });
   const initMint = useWriteContract();
+  // Snapshot of the form at the moment "Deploy" was clicked - the receipt effect
+  // must not read live inputs, which the user may have edited while waiting.
+  const deployCtx = useRef<{ name: string; symbol: string; initUnits: bigint } | null>(null);
 
   useEffect(() => {
     const a = deployRcpt.data?.contractAddress;
-    if (a && !token && address) {
+    const ctx = deployCtx.current;
+    if (a && !token && address && ctx) {
       const addr = getAddress(a);
       setToken(addr);
-      saveToken({ address: addr, owner: address, kind: "created", name: name.trim(), symbol: symbol.trim(), decimals: 6 });
-      if (initUnits && initUnits > 0n && !mintedRef.current) {
+      registerToken(signMessageAsync, {
+        address: addr,
+        owner: address,
+        kind: "created",
+        name: ctx.name,
+        symbol: ctx.symbol,
+        decimals: 6,
+      });
+      if (ctx.initUnits > 0n && !mintedRef.current) {
         mintedRef.current = true;
-        initMint.writeContract({ address: addr, abi: confidentialTokenAbi, functionName: "mint", args: [address, initUnits] });
+        setMintNote({ units: ctx.initUnits, symbol: ctx.symbol });
+        initMint.writeContract({
+          address: addr,
+          abi: confidentialTokenAbi,
+          functionName: "mint",
+          args: [address, ctx.initUnits],
+        });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -429,6 +499,7 @@ function CreateNewTab() {
 
   function deployToken() {
     if (!okName || !okSymbol || capBad || initBad || overCap) return;
+    deployCtx.current = { name: name.trim(), symbol: symbol.trim(), initUnits: initUnits ?? 0n };
     deploy.deployContract({
       abi: ConfidentialMintableToken_ABI,
       bytecode: ConfidentialMintableToken_BYTECODE,
@@ -438,8 +509,8 @@ function CreateNewTab() {
 
   return (
     <div className="space-y-4">
-      <div className="panel p-5">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-muted">New confidential ERC-7984 token</div>
+      <div className="sheet p-5">
+        <span className="label">New confidential ERC-7984 token</span>
         <p className="mt-1 text-[11px] text-muted">
           You are the only minter. Balances are encrypted (6 decimals). The max supply is public; balances stay private.
         </p>
@@ -488,17 +559,24 @@ function CreateNewTab() {
           </button>
         )}
         {deploy.data && !token && (
-          <a href={explorerTx(deploy.data)} target="_blank" rel="noreferrer" className="ml-3 text-xs text-accent-2 hover:underline">
+          <a href={explorerTx(deploy.data)} target="_blank" rel="noreferrer" className="link ml-3 text-xs">
             view tx ↗
           </a>
         )}
         {deploy.error && <p className="mt-2 text-xs text-neg">{cleanErr(deploy.error.message)}</p>}
-        {token && initUnits && initUnits > 0n && (
+        {token && mintNote && mintNote.units > 0n && (
           <p className="mt-3 text-xs">
             {initMint.isPending ? (
               <span className="text-muted">Confirm the initial mint in your wallet…</span>
+            ) : initMint.error ? (
+              <span className="text-neg">
+                Deployed ✓ but the initial mint didn't go through ({cleanErr(initMint.error.message)}). Mint below
+                instead.
+              </span>
             ) : (
-              <span className="text-pos">Deployed ✓ minting {fmtToken(initUnits, 6)} {symbol.trim()} to you.</span>
+              <span className="text-pos">
+                Deployed ✓ minting {fmtToken(mintNote.units, 6)} {mintNote.symbol} to you.
+              </span>
             )}
           </p>
         )}
@@ -534,9 +612,9 @@ function MintPanel({ token, symbol, recipient }: { token: Address; symbol: strin
   }
 
   return (
-    <div className="panel p-5">
+    <div className="sheet p-5">
       <div className="flex items-center justify-between">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Mint more {symbol} to yourself</div>
+        <span className="label">Mint more {symbol} to yourself</span>
         {cap > 0n && (
           <span className="text-[10px] text-muted">
             {fmtToken(minted, 6)} / {fmtToken(cap, 6)} minted
@@ -549,9 +627,7 @@ function MintPanel({ token, symbol, recipient }: { token: Address; symbol: strin
           onChange={(e) => setAmt(e.target.value)}
           inputMode="decimal"
           placeholder={`Amount of ${symbol}`}
-          className={`flex-1 rounded-xl bg-panel-2 border px-3 py-2.5 text-sm outline-none focus:border-accent ${
-            overCap ? "border-neg" : "border-line"
-          }`}
+          className={`flex-1 ${inputCls(overCap)}`}
         />
         <button onClick={doMint} disabled={mint.isPending || rcpt.isLoading || !amt || overCap} className="btn-primary text-sm whitespace-nowrap">
           {mint.isPending ? "Confirm…" : rcpt.isLoading ? "Minting…" : "Mint"}
@@ -571,7 +647,7 @@ function MintPanel({ token, symbol, recipient }: { token: Address; symbol: strin
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <label className="text-[10px] text-muted">{label}</label>
+      <label className="label">{label}</label>
       <div className="mt-1">{children}</div>
     </div>
   );
@@ -589,7 +665,7 @@ function useReadErc20Balance(token: Address | undefined, owner: Address | undefi
 }
 
 function inputCls(bad?: boolean): string {
-  return `w-full rounded-xl bg-panel-2 border px-3 py-2.5 text-sm outline-none focus:border-accent ${
+  return `w-full bg-panel border rounded-md px-3 py-2 text-sm placeholder:text-muted/70 outline-none transition-colors focus:border-accent ${
     bad ? "border-neg" : "border-line"
   }`;
 }
@@ -602,7 +678,9 @@ function safeParse(text: string, decimals: number): bigint | null {
   const t = text.trim();
   if (!new RegExp(`^\\d+(\\.\\d{0,${decimals}})?$`).test(t)) return null;
   try {
-    return parseUnits(t, decimals);
+    const v = parseUnits(t, decimals);
+    // euint64 ceiling - anything larger would only fail later at tx encoding.
+    return v < 2n ** 64n ? v : null;
   } catch {
     return null;
   }

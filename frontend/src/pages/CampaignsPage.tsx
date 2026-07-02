@@ -45,27 +45,31 @@ export function CampaignsPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
-      <h1 className="text-2xl font-black tracking-tight">Your campaigns</h1>
+      <h1 className="font-display text-3xl font-black tracking-tight">Your campaigns</h1>
       <p className="mt-1 text-sm text-muted">
         Distributions you created - track claims and refund unclaimed funds.{" "}
-        <Link to="/how-it-works" className="text-accent-2 hover:underline">
+        <Link to="/how-it-works" className="link">
           How it works →
         </Link>
       </p>
 
       {!isConnected ? (
-        <div className="panel p-6 mt-6 flex items-center justify-between">
+        <div className="sheet p-6 mt-6 flex items-center justify-between gap-4">
           <span className="text-sm text-muted">Connect your wallet to see campaigns you created.</span>
-          <button className="btn-primary text-sm" onClick={open}>
+          <button className="btn-primary text-sm shrink-0" onClick={open}>
             Connect
           </button>
         </div>
       ) : loading && items.length === 0 ? (
-        <div className="panel p-6 mt-6 text-sm text-muted animate-pulse">Loading your campaigns…</div>
+        <div className="mt-6 space-y-3" aria-label="Loading your campaigns">
+          <div className="skeleton h-16 w-full" />
+          <div className="skeleton h-16 w-full" />
+          <div className="skeleton h-16 w-full" />
+        </div>
       ) : items.length === 0 ? (
-        <div className="panel p-6 mt-6 text-sm text-muted">
-          No campaigns yet. Create one on the{" "}
-          <Link to="/distribute" className="text-accent-2 hover:underline">
+        <div className="sheet p-6 mt-6 text-sm text-muted">
+          No campaigns on file yet. Start one on the{" "}
+          <Link to="/distribute" className="link">
             Distribute
           </Link>{" "}
           page.
@@ -113,12 +117,12 @@ function DisperseRow({ d }: { d: CampaignMeta }) {
       <div className="min-w-0">
         <div className="text-sm font-semibold flex items-center gap-2">
           {d.name || "Disperse"}
-          <span className="tag bg-panel-2 text-pos border border-line">Sent</span>
+          <span className="stamp text-pos text-[9px]">Sent</span>
         </div>
         <div className="text-[11px] text-muted">
           Dispersed to {d.count} recipient{d.count === 1 ? "" : "s"}
           {dateLabel && ` · ${dateLabel}`} ·{" "}
-          <a className="text-accent-2 hover:underline" href={explorerTx(d.airdrop)} target="_blank" rel="noreferrer">
+          <a className="link" href={explorerTx(d.airdrop)} target="_blank" rel="noreferrer">
             view tx ↗
           </a>
         </div>
@@ -134,7 +138,9 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
   const [newEnd, setNewEnd] = useState("");
   const [extendErr, setExtendErr] = useState<string | null>(null);
   const [withdrawn, setWithdrawn] = useState(!!d.withdrawn);
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
   const [claimedCount, setClaimedCount] = useState<number | null>(null);
+  const [countPartial, setCountPartial] = useState(false);
   const [countFailed, setCountFailed] = useState(false);
   const publicClient = usePublicClient();
   const { signMessageAsync } = useSignMessage();
@@ -147,7 +153,7 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
   const ended = endTime > 0 ? Math.floor(Date.now() / 1000) >= endTime : false;
   const endLabel =
     endTime > 0 ? new Date(endTime * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : null;
-  const headerLabel = d.name || "Airdrop you created";
+  const headerLabel = d.name || "Untitled airdrop";
   const count = d.count ?? 0;
 
   // Claim progress, counted live from the airdrop's `Claimed` events.
@@ -155,16 +161,17 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
     if (!open || !publicClient || !d.complete) return;
     let cancelled = false;
     countClaims(publicClient, d.airdrop, d.block)
-      .then((n) => {
+      .then((r) => {
         if (cancelled) return;
-        setClaimedCount(n);
+        setClaimedCount(r.count);
+        setCountPartial(r.partial);
         setCountFailed(false);
       })
       .catch(() => !cancelled && setCountFailed(true));
     return () => {
       cancelled = true;
     };
-  }, [open, d.airdrop, d.block, publicClient]);
+  }, [open, d.airdrop, d.block, d.complete, publicClient]);
 
   async function doWithdraw() {
     setErr(null);
@@ -172,8 +179,16 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
       setErr("Enter a valid destination address.");
       return;
     }
+    setWithdrawBusy(true);
     try {
-      await withdraw.mutateAsync({ recipient: to as Address });
+      // The SDK returns at submission; wait for the receipt so a reverted tx
+      // doesn't get flagged "Withdrawn" here and closed for claimants in the store.
+      const hash = await withdraw.mutateAsync({ recipient: to as Address });
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash });
+      if (receipt && receipt.status !== "success") {
+        setErr("The withdraw transaction reverted - nothing was withdrawn.");
+        return;
+      }
       setWithdrawn(true);
       // Flag it withdrawn in the store so claim pages show "closed". Needs the
       // creator's auth signature; declining skips the flag - the on-chain
@@ -186,6 +201,8 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
       }
     } catch (e) {
       setErr(cleanError(e));
+    } finally {
+      setWithdrawBusy(false);
     }
   }
 
@@ -211,8 +228,8 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
         <div className="min-w-0">
           <div className="text-sm font-semibold flex items-center gap-2">
             {headerLabel}
-            {!d.complete && <span className="tag bg-panel-2 text-neg border border-line">Unfinished</span>}
-            {withdrawn && <span className="tag bg-panel-2 text-neg border border-line">Withdrawn</span>}
+            {!d.complete && <span className="stamp text-neg text-[9px]">Unfinished</span>}
+            {withdrawn && <span className="stamp text-neg text-[9px]">Withdrawn</span>}
           </div>
           <div className="text-[11px] text-muted">
             {count > 0 && (
@@ -220,7 +237,7 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
                 {count} recipient{count === 1 ? "" : "s"} ·{" "}
               </>
             )}
-            <a className="text-accent-2 hover:underline" href={explorerAddr(d.airdrop)} target="_blank" rel="noreferrer">
+            <a className="link" href={explorerAddr(d.airdrop)} target="_blank" rel="noreferrer">
               {shortAddr(d.airdrop)} ↗
             </a>
             {endLabel && (
@@ -237,7 +254,7 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
       </div>
 
       {open && (
-        <div className="mt-4 space-y-3 border-t border-line/60 pt-3">
+        <div className="mt-4 space-y-3 rule-dashed pt-3">
           {!d.complete ? (
             <div className="text-[11px] text-neg">
               Signing didn't finish - recipients can't claim yet. Refund the funds below, or re-create the
@@ -254,7 +271,7 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
                   <span className="text-muted">
                     Couldn't count claims right now -{" "}
                     <a
-                      className="text-accent-2 hover:underline"
+                      className="link"
                       href={explorerAddr(d.airdrop)}
                       target="_blank"
                       rel="noreferrer"
@@ -263,9 +280,10 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
                     </a>
                   </span>
                 ) : claimedCount === null ? (
-                  <span className="text-muted animate-pulse">Counting claims…</span>
+                  <span className="skeleton inline-block h-3 w-28 align-middle" aria-label="Counting claims" />
                 ) : (
                   <>
+                    {countPartial && <span className="text-muted">at least </span>}
                     <span className="font-semibold text-pos">{claimedCount}</span>
                     <span className="text-muted">{count > 0 ? ` of ${count} claimed` : " claimed"}</span>
                   </>
@@ -275,8 +293,8 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
           )}
 
           {/* Withdraw / refund */}
-          <div className="bg-panel-2 border border-line rounded-xl p-3">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Withdraw unclaimed funds</div>
+          <div className="bg-manila/50 border border-line rounded-md p-3">
+            <div className="label">Withdraw unclaimed funds</div>
             <p className="text-[11px] text-muted mt-1">Sends all remaining tokens to the address below.</p>
             <div className="flex gap-2 mt-2">
               <input
@@ -287,10 +305,10 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
               />
               <button
                 className="btn-primary text-xs shrink-0"
-                disabled={withdraw.isPending || withdrawn}
+                disabled={withdrawBusy || withdrawn}
                 onClick={doWithdraw}
               >
-                {withdraw.isPending ? "Withdrawing…" : withdrawn ? "Withdrawn" : "Withdraw"}
+                {withdrawBusy ? "Withdrawing…" : withdrawn ? "Withdrawn" : "Withdraw"}
               </button>
             </div>
             {err && <div className="text-[11px] text-neg mt-2">{err}</div>}
@@ -298,8 +316,8 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
 
           {/* Extend claim window */}
           {!ended && canExtendQ.data === true && (
-            <div className="bg-panel-2 border border-line rounded-xl p-3">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Extend claim window</div>
+            <div className="bg-manila/50 border border-line rounded-md p-3">
+              <div className="label">Extend claim window</div>
               <p className="text-[11px] text-muted mt-1">Give recipients more time. Must be later than the current end.</p>
               <div className="flex gap-2 mt-2">
                 <input
@@ -329,11 +347,11 @@ function CampaignRow({ d, creator }: { d: CampaignMeta; creator: string }) {
 function Copy({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="flex items-center gap-2 bg-panel-2 border border-line rounded-xl px-3 py-2">
+    <div className="flex items-center gap-2 bg-panel-2 border border-line rounded-md px-3 py-2">
       <span className="font-mono text-xs text-muted shrink-0">{label}</span>
       <span className="font-mono text-xs text-muted truncate flex-1">{value}</span>
       <button
-        className="text-[11px] font-semibold text-accent-2 hover:underline shrink-0"
+        className="link text-[11px] font-semibold shrink-0"
         onClick={() =>
           navigator.clipboard.writeText(value).then(() => {
             setCopied(true);

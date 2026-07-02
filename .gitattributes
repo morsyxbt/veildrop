@@ -1,0 +1,14 @@
+# Normalize line endings: store everything as LF in the repo.
+* text=auto eol=lf
+
+# Shell scripts must stay LF (run on WSL / Linux / Vercel).
+*.sh text eol=lf
+
+# Binary assets — never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary

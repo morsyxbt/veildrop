@@ -1,0 +1,40 @@
+# Secrets — never commit
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Local AI skill bundle (not part of the product)
+.claude/
+
+# Local scratch / test data (not part of the product)
+xyz/
+
+# Dependencies
+node_modules/
+.pnp.*
+
+# fhevm / build artifacts
+fhevmTemp
+artifacts/
+build/
+cache/
+coverage/
+coverage.json
+.coverage_artifacts
+.coverage_cache
+.coverage_contracts
+types/
+typechain-types/
+deployments/
+dist/
+.next/
+tmp/
+
+# Misc
+*.log
+.DS_Store
+pnpm-lock.yaml
+yarn.lock

@@ -10,7 +10,7 @@ import {
   useSignClaimAuthorization,
 } from "@tokenops/sdk/fhe-airdrop/react";
 import { useDisperse, useGetBatchLimits } from "@tokenops/sdk/fhe-disperse/react";
-import { useZamaSDK } from "@zama-fhe/react-sdk";
+import { useConfidentialBalance, useZamaSDK } from "@zama-fhe/react-sdk";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -97,6 +97,10 @@ export function DistributePage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [saved, setSaved] = useState(false);
   const [saveNote, setSaveNote] = useState<string | null>(null);
+  // The user explicitly clicks "verify" in Review to decrypt their own balance -
+  // a labelled action, so the wallet's decrypt popup has context (nobody signs an
+  // unexplained request). Reset whenever the token changes (below).
+  const [verifyRequested, setVerifyRequested] = useState(false);
   const [savedSlug, setSavedSlug] = useState<string | undefined>();
   const [pending, setPending] = useState<{
     airdrop: Address;
@@ -132,6 +136,19 @@ export function DistributePage() {
   const symbol = meta.symbol || TOKEN_SYMBOL;
   const tokenAddr = token as `0x${string}`;
 
+  // Decrypt the sender's OWN confidential balance to pre-flight the send.
+  // ERC-7984 transfers don't revert when you overspend - they silently cap at
+  // your balance (often to 0) to avoid leaking it - so an over-balance drop would
+  // "succeed" but fund ~nothing. Only runs once the user clicks "verify" in Review.
+  const senderBalance = useConfidentialBalance(
+    { tokenAddress: tokenAddr },
+    { enabled: verifyRequested && isConnected && !wrongChain && meta.valid && meta.confidential },
+  );
+  // A new token invalidates a prior verification - make the user re-check it.
+  useEffect(() => {
+    setVerifyRequested(false);
+  }, [tokenAddr]);
+
   // ENS names resolve against mainnet as the user types; results land in this
   // map and the parser re-runs. Names not yet in the map are "resolving".
   const [ensMap, setEnsMap] = useState<Map<string, Address | null>>(new Map());
@@ -162,6 +179,12 @@ export function DistributePage() {
     };
   }, [resolving]);
   const total = useMemo(() => rows.reduce((s, r) => s + r.units, 0n), [rows]);
+  // Balance verification (Review step). The user must decrypt their balance and
+  // clear the total before Send; a definite shortfall hard-blocks.
+  const balanceKnown = senderBalance.data !== undefined;
+  const insufficient = balanceKnown && total > 0n && total > (senderBalance.data ?? 0n);
+  const verifiedEnough = balanceKnown && !insufficient;
+  const verifyFailed = verifyRequested && senderBalance.isError;
   const busy =
     phase === "approving" ||
     phase === "granting" ||
@@ -207,6 +230,7 @@ export function DistributePage() {
 
   async function runAirdrop() {
     if (!address || rows.length === 0 || errors.length > 0 || resolving.length > 0 || !publicClient) return;
+    if (insufficient) return; // button is disabled in this state - backstop against a race
     setErrMsg(null);
     setSaveNote(null);
     setCampaign(null);
@@ -412,6 +436,7 @@ export function DistributePage() {
   // claim, no signing loop - the SDK batch-encrypts all amounts in one proof.
   async function runDisperse() {
     if (!address || rows.length === 0 || errors.length > 0 || resolving.length > 0 || !publicClient) return;
+    if (insufficient) return; // button is disabled in this state - backstop against a race
     setErrMsg(null);
     setDisperseTx(undefined);
     setDisperseSent(false);
@@ -492,6 +517,7 @@ export function DistributePage() {
     setLens(false);
     setWindowDays(7);
     setCustomEnd("");
+    setVerifyRequested(false);
   }
 
   // Wizard navigation clears any stale error from a previous attempt; a failed
@@ -512,7 +538,7 @@ export function DistributePage() {
     meta.valid && meta.confidential,
     rows.length > 0 && errors.length === 0 && resolving.length === 0 && !tooMany,
     mode === "disperse" ? !overDisperseLimit && !disperseLimitUnknown : !customEndInvalid,
-    true,
+    verifiedEnough, // Review -> Send: must decrypt balance and clear the total first
     true,
   ];
   const continueLabel = [
@@ -535,7 +561,7 @@ export function DistributePage() {
         : customEndInvalid
           ? "Pick an end in the future"
           : "Continue",
-    "Continue",
+    insufficient ? "Not enough balance" : verifiedEnough ? "Continue" : "Verify your balance to continue",
     "",
   ][step];
   // Re-blocks Send if the disperse limit resolves (or a list edit lands) after
@@ -921,6 +947,57 @@ export function DistributePage() {
                             <span className="text-fg">
                               {windowDays === "custom" ? customEnd.replace("T", " ") : `${windowDays} days`}
                             </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Balance verification - user-initiated decrypt so the wallet
+                          popup is expected. Gates Continue: enough -> proceed, low ->
+                          stop + get more, failed -> retry. */}
+                      <div className="rule-dashed mt-4 pt-4" aria-live="polite">
+                        <span className="label">Balance check</span>
+                        {!verifyRequested ? (
+                          <div className="mt-2">
+                            <p className="text-[11px] text-muted leading-relaxed">
+                              Your {symbol} balance is encrypted. Decrypt it (a quick wallet signature) to
+                              confirm you can cover this {fmtToken(total, decimals)} {symbol} - an over-balance
+                              drop would silently fund almost nothing on-chain.
+                            </p>
+                            <button className="btn-ghost text-xs mt-2.5" onClick={() => setVerifyRequested(true)}>
+                              Decrypt my balance to verify
+                            </button>
+                          </div>
+                        ) : senderBalance.isLoading ? (
+                          <div className="mt-2 flex items-center gap-2 text-[11px] text-muted">
+                            <span className="skeleton h-3 w-3 rounded-full" aria-hidden />
+                            Decrypting your balance…
+                          </div>
+                        ) : verifyFailed ? (
+                          <div className="mt-2">
+                            <p className="text-[11px] text-neg">
+                              Couldn't decrypt your balance - the signature may have been declined. Retry to
+                              check it.
+                            </p>
+                            <button className="btn-ghost text-xs mt-2" onClick={() => senderBalance.refetch()}>
+                              Retry
+                            </button>
+                          </div>
+                        ) : insufficient ? (
+                          <div className="mt-2 rounded-md border border-neg/40 bg-neg/5 px-3 py-2">
+                            <p className="text-[11px] text-neg">
+                              <strong>Not enough {symbol}.</strong> You have{" "}
+                              {fmtToken(senderBalance.data ?? 0n, decimals)}, this sends {fmtToken(total, decimals)}.{" "}
+                              <Link to="/faucet" className="link">
+                                Mint more →
+                              </Link>
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="mt-2 rounded-md border border-pos/40 bg-pos/5 px-3 py-2">
+                            <p className="text-[11px] text-pos">
+                              ✓ You have {fmtToken(senderBalance.data ?? 0n, decimals)} {symbol} - enough to cover
+                              this drop.
+                            </p>
                           </div>
                         )}
                       </div>

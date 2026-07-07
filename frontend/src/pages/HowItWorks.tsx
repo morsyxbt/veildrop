@@ -140,7 +140,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function Step({ n, title, body }: { n: number; title: string; body: string }) {
   return (
     <div className="panel p-5">
-      <div className="font-display font-black text-accent text-xl">§{n}</div>
+      <div className="inline-grid place-items-center w-9 h-9 rounded-lg bg-accent text-onaccent font-display font-black">
+        {String(n).padStart(2, "0")}
+      </div>
       <div className="font-bold mt-2">{title}</div>
       <p className="text-sm text-muted mt-1 leading-relaxed">{body}</p>
     </div>

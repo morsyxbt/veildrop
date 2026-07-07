@@ -8,9 +8,9 @@ const EVT = "veildrop-theme-change";
 // envelope + wax seal, on a manila tile that flips with the theme so the tab
 // icon tracks the in-app light/dark toggle.
 function faviconDataUri(dark: boolean): string {
-  const tile = dark ? "#2e2717" : "#f0e5c9";
-  const ink = dark ? "#efe6d3" : "#1c170f";
-  const seal = dark ? "#e8500f" : "#c73e12";
+  const tile = dark ? "#2a2708" : "#fff5c9";
+  const ink = dark ? "#f4f4f2" : "#111314";
+  const seal = "#ffd208";
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">` +
     `<rect width="64" height="64" rx="14" fill="${tile}"/>` +
@@ -40,7 +40,7 @@ function setFavicon(dark: boolean) {
 function setThemeColor(dark: boolean) {
   if (typeof document === "undefined") return;
   const meta = document.querySelector<HTMLMetaElement>("meta[name='theme-color']");
-  if (meta) meta.content = dark ? "#16110b" : "#f5f0e6";
+  if (meta) meta.content = dark ? "#0e0f10" : "#f4f2ec";
 }
 
 // Apply the stored theme + matching favicon on first import. Default is light.

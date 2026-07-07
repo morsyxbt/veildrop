@@ -221,8 +221,8 @@ function ChecklistItem({
           ✓
         </span>
       ) : (
-        <span className="grid place-items-center w-5 h-5 rounded-md bg-manila border border-line font-display text-[10px] font-black shrink-0 mt-0.5">
-          §{n}
+        <span className="grid place-items-center w-5 h-5 rounded-md bg-accent text-onaccent font-display text-[10px] font-black shrink-0 mt-0.5">
+          {n}
         </span>
       )}
       <div>

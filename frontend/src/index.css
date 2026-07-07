@@ -9,42 +9,45 @@
    Dark = the same desk at midnight - warm charcoal, cream ink, seal unchanged.
    Ciphertext renders as redaction bars (see CipherValue).
    ========================================================================= */
+/* Zama-brand, light-first: warm cream ground, near-black ink, signature yellow.
+   The "redaction bar" (how encrypted amounts hide) is kept — it's the product,
+   not decoration — just recolored to a clean ink bar. */
 :root {
-  --bg: #f5f0e6;
-  --panel: #fdfaf3;
-  --panel-2: #ede6d6;
-  --line: #ddd2bc;
-  --fg: #1c170f;
-  --muted: #776c58;
-  --primary: #c73e12; /* vermillion - the wax seal */
-  --primary-h: #a93407;
-  --secondary: #2f6b4f; /* stamp green - links, "approved" */
-  --onaccent: #fff9ef;
-  --pos: #2f6b4f;
-  --neg: #9c2007;
-  --manila: #f0e5c9;
-  --redaction: #241e12; /* the bar that hides a number */
+  --bg: #f4f2ec;
+  --panel: #ffffff;
+  --panel-2: #efece3;
+  --line: #e5e1d5;
+  --fg: #111314;
+  --muted: #6b6f69;
+  --primary: #ffd208; /* Zama yellow — the one bold accent */
+  --primary-h: #ffdc42;
+  --secondary: #2b44ff; /* Zama blue — links */
+  --onaccent: #111314; /* black text on yellow */
+  --pos: #0f9d58;
+  --neg: #dc2626;
+  --manila: #fff5c9; /* soft-yellow highlight fill */
+  --redaction: #111314; /* the bar that hides a number */
   --shadow-panel:
-    0 1px 2px rgba(28, 23, 15, 0.05),
-    0 14px 36px -28px rgba(28, 23, 15, 0.4);
+    0 1px 2px rgba(17, 19, 20, 0.04),
+    0 14px 34px -26px rgba(17, 19, 20, 0.18);
 }
 
 .dark {
-  --bg: #16110b;
-  --panel: #1f1911;
-  --panel-2: #292216;
-  --line: #3b3221;
-  --fg: #efe6d3;
-  --muted: #a3957c;
-  --primary: #e8500f;
-  --primary-h: #f4632b;
-  --secondary: #83c09e;
-  --onaccent: #fff6ea;
-  --pos: #83c09e;
-  --neg: #e86a4e;
-  --manila: #2e2717;
-  --redaction: #efe6d3;
-  --shadow-panel: 0 1px 0 rgba(239, 230, 211, 0.03);
+  --bg: #0e0f10;
+  --panel: #17191a;
+  --panel-2: #202223;
+  --line: #2b2d2e;
+  --fg: #f4f4f2;
+  --muted: #9ca09a;
+  --primary: #ffd208;
+  --primary-h: #ffdc42;
+  --secondary: #8f9bff;
+  --onaccent: #111314;
+  --pos: #34d399;
+  --neg: #f87171;
+  --manila: #2a2708;
+  --redaction: #f4f4f2;
+  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.03), 0 18px 40px -30px rgba(0, 0, 0, 0.7);
 }
 
 @theme inline {
@@ -62,7 +65,7 @@
   --color-manila: var(--manila);
   --color-redaction: var(--redaction);
   --font-sans: "Inter", system-ui, sans-serif;
-  --font-display: "Fraunces", "Georgia", serif;
+  --font-display: "Familjen Grotesk", "Inter", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
@@ -89,11 +92,10 @@ body::before {
   z-index: 1;
 }
 
-/* Display type: headlines are set in a serif, like a document title block. */
+/* Display type: bold geometric grotesque, tight tracking (Zama-style). */
 .font-display {
   font-family: var(--font-display);
-  font-variation-settings: "opsz" 40;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
 }
 
 /* ------------------------------ Surfaces ------------------------------- */
@@ -103,11 +105,11 @@ body::before {
   box-shadow: var(--shadow-panel);
 }
 
-/* A sheet of paper that matters: doubled rule at top, like a letterhead. */
+/* A surface that matters: a solid Zama-yellow accent bar across the top. */
 .sheet {
-  @apply bg-panel border border-line rounded-lg;
+  @apply bg-panel border border-line rounded-2xl;
   box-shadow: var(--shadow-panel);
-  border-top: 3px double var(--line);
+  border-top: 3px solid var(--primary);
 }
 
 /* --------------------------------- Type -------------------------------- */
@@ -128,33 +130,41 @@ body::before {
     disabled:opacity-40 disabled:cursor-not-allowed;
 }
 
-/* Primary action = the wax seal: pressed like a stamp. */
+/* Primary action = flat Zama yellow, black text. */
 .btn-primary {
-  @apply px-4 py-2 rounded-md font-semibold text-sm transition-all cursor-pointer
+  @apply px-4 py-2.5 rounded-[10px] font-semibold text-sm transition-all cursor-pointer
     disabled:opacity-40 disabled:cursor-not-allowed;
   background-color: var(--primary);
   color: var(--onaccent);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 249, 239, 0.18),
-    0 1px 2px rgba(28, 23, 15, 0.25);
 }
 .btn-primary:hover:not(:disabled) {
   background-color: var(--primary-h);
 }
 .btn-primary:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: inset 0 1px 2px rgba(28, 23, 15, 0.25);
 }
 
+/* Quiet secondary = bordered, subtle (nav chips, low-emphasis actions). */
 .btn-ghost {
-  @apply px-4 py-2 rounded-md font-semibold text-sm transition-all cursor-pointer
-    disabled:opacity-40 disabled:cursor-not-allowed bg-panel text-fg border border-line;
+  @apply px-4 py-2.5 rounded-[10px] font-semibold text-sm transition-all cursor-pointer
+    disabled:opacity-40 disabled:cursor-not-allowed bg-transparent text-fg border border-line;
 }
 .btn-ghost:hover:not(:disabled) {
-  border-color: var(--primary);
-  color: var(--primary);
+  border-color: var(--fg);
 }
 .btn-ghost:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* Strong secondary = flat near-black, light text — the yellow+black CTA pair. */
+.btn-dark {
+  @apply px-4 py-2.5 rounded-[10px] font-semibold text-sm transition-all cursor-pointer
+    disabled:opacity-40 disabled:cursor-not-allowed bg-fg text-panel border border-transparent;
+}
+.btn-dark:hover:not(:disabled) {
+  opacity: 0.88;
+}
+.btn-dark:active:not(:disabled) {
   transform: translateY(1px);
 }
 
@@ -182,14 +192,17 @@ body::before {
   @apply text-[10px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded-[3px] border;
 }
 
-/* Rubber stamp: rotated, double-bordered, inked unevenly. */
+/* Eyebrow label: clean uppercase micro-label (Zama-style section marker). */
 .stamp {
-  @apply inline-block text-[10px] font-black uppercase tracking-[0.22em] px-2.5 py-1 rounded-[3px] select-none;
-  border: 2px solid currentColor;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
-  transform: rotate(-3deg);
-  opacity: 0.85;
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='40'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='2'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='4' intercept='-0.6'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' fill='white'/%3E%3Crect width='100%25' height='100%25' filter='url(%23r)' opacity='0.35'/%3E%3C/svg%3E");
+  @apply inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] select-none;
+}
+.stamp::before,
+.stamp::after {
+  content: "";
+  width: 12px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.4;
 }
 
 /* Redaction bar: what the chain sees. Subtle sheen sweeps across it. */
